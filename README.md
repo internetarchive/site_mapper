@@ -54,7 +54,7 @@ Artifacts written:
 - `results/model/random_forest_model.joblib`
 - `results/model/model_info.json`
 
-### 2) Full pipeline with crawler (optional)
+### 2) (work in progress) Full pipeline with crawler (optional)
 
 If you want to regenerate the dataset from a tiny crawl (default `page_limit: 5` in `config.yaml`):
 
