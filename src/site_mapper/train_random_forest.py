@@ -296,7 +296,6 @@ def main():
     print("TRAINING COMPLETE!")
     print("="*50)
     print(f"Final ROC AUC: {results['auc_score']:.4f}")
-    print("Next step: Integrate model into crawler for real-time link filtering")
 
 if __name__ == "__main__":
     main()
