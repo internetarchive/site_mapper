@@ -1,3 +1,25 @@
+"""
+Inference-time ML link filter for the crawler.
+
+Responsibilities:
+- Load trained model and metadata (feature list)
+- Extract the same features used in training from a link JSON
+- Predict whether a link should be crawled (boolean + confidence)
+- Track and save approved/rejected links for analysis
+
+Inputs:
+- results/model/random_forest_model.joblib
+- results/model/model_info.json
+
+Outputs (when save_filter_decisions is called):
+- results/ml_rejected_links.json
+- results/ml_approved_links.json
+
+Typical usage:
+  ml_filter = MLLinkFilter("results/model/random_forest_model.joblib", "results/model/model_info.json")
+  should_crawl = ml_filter.should_crawl_link(link_data)
+"""
+
 import json
 import logging
 from urllib.parse import urlparse
@@ -8,10 +30,21 @@ from typing import Dict, Any
 
 
 class MLLinkFilter:
-    """Machine Learning based link filter for crawler"""
+    """
+    Machine Learning based link filter for the crawler.
+
+    Loads a trained classifier and accompanying metadata to make per-link
+    crawl/skip decisions consistent with the training pipeline.
+    """
     
     def __init__(self, model_path, model_info_path):
-        """Load the trained model"""
+        """
+        Load the trained model and its metadata.
+
+        Args:
+            model_path: Path to a Joblib file containing the fitted classifier
+            model_info_path: Path to model_info.json with feature_names and metrics
+        """
         self.model = joblib.load(model_path)
         
         with open(model_info_path, 'r') as f:
@@ -19,25 +52,33 @@ class MLLinkFilter:
         
         self.feature_names = self.model_info['feature_names']
         
-        # Stats tracking
         self.total_links_analyzed = 0
         self.links_filtered_out = 0
         self.links_approved = 0
-        
-        # Track rejected links for analysis
         self.rejected_links = []
         self.approved_links = []
         
         logging.info(f"ML Filter loaded with {len(self.feature_names)} features")
     
     def extract_features_for_prediction(self, link_data):
-        """Extract features exactly like preprocessing pipeline"""
-        # URL features
+        """
+        Extract the feature vector for a single link using the same logic
+        as the preprocessing pipeline.
+
+        Args:
+            link_data: dict representing one outlink with fields like
+                absolute_url, text, is_external, and nested analysis
+
+        Returns:
+            list ordered to match self.feature_names, containing numeric/boolean
+            features ready for prediction
+        """
+
         url = link_data['absolute_url']
         try:
             parsed = urlparse(url)
             url_features = {
-                'is_target_domain': parsed.netloc in ['archive-it.org'],  # Make configurable if needed
+                'is_target_domain': parsed.netloc in ['archive-it.org'],
                 'path_length': len(parsed.path),
                 'has_query': bool(parsed.query),
                 'query_length': len(parsed.query),
@@ -56,7 +97,7 @@ class MLLinkFilter:
                 'has_fragment': False
             }
         
-        # Text features
+
         text = link_data.get('text', '')
         if pd.isna(text) or text == '':
             text_features = {
@@ -79,7 +120,7 @@ class MLLinkFilter:
                 'contains_nav_words': any(word in text for word in nav_words)
             }
         
-        # Domain-specific features
+
         analysis = link_data.get('analysis', {})
         archive_analysis = analysis.get('analyze_archive_it_link', {})
         
@@ -115,7 +156,15 @@ class MLLinkFilter:
         return feature_vector
     
     def should_crawl_link(self, link_data: Dict[str, Any]) -> bool:
-        """Use ML model to decide if link should be crawled"""
+        """
+        Use the ML model to decide whether a link should be crawled.
+
+        Args:
+            link_data: outlink record emitted by the crawler
+
+        Returns:
+            True if the link is predicted to be valuable (crawl), False otherwise
+        """
         self.total_links_analyzed += 1
         
         try:
@@ -139,6 +188,7 @@ class MLLinkFilter:
                 })
             else:
                 self.links_filtered_out += 1
+
                 # Store rejected link details
                 self.rejected_links.append({
                     'url': link_data['absolute_url'],
@@ -146,7 +196,7 @@ class MLLinkFilter:
                     'confidence': confidence[0],  # Confidence for "bad" class
                     'reason': 'ML_MODEL_PREDICTION'
                 })
-                # Log filtered links for analysis
+
                 logging.info(f"ML FILTER: Rejected {link_data['absolute_url']} "
                            f"(confidence: {confidence[0]:.3f})")
             
@@ -154,12 +204,16 @@ class MLLinkFilter:
             
         except Exception as e:
             logging.error(f"ML Filter error for {link_data['absolute_url']}: {e}")
-            # Default to crawling if error
             self.links_approved += 1
             return True
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get filtering statistics"""
+        """
+        Get aggregate filtering statistics for the current crawl session.
+
+        Returns:
+            dict with counts for total_analyzed, approved, filtered_out, filter_rate
+        """
         return {
             'total_analyzed': self.total_links_analyzed,
             'approved': self.links_approved,
@@ -168,16 +222,22 @@ class MLLinkFilter:
         }
     
     def save_filter_decisions(self, output_dir: str):
-        """Save all filter decisions for analysis"""
+        """
+        Save all approved/rejected link decisions for offline analysis.
+
+        Args:
+            output_dir: directory where JSON files will be written
+
+        Writes:
+            ml_rejected_links.json, ml_approved_links.json in output_dir
+        """
         import os
         os.makedirs(output_dir, exist_ok=True)
         
-        # Save rejected links
         rejected_path = os.path.join(output_dir, 'ml_rejected_links.json')
         with open(rejected_path, 'w') as f:
             json.dump(self.rejected_links, f, indent=2)
         
-        # Save approved links
         approved_path = os.path.join(output_dir, 'ml_approved_links.json')
         with open(approved_path, 'w') as f:
             json.dump(self.approved_links, f, indent=2)

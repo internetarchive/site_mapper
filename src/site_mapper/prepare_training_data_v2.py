@@ -1,3 +1,22 @@
+"""
+Create a contextual training dataset from crawl results.
+
+Inputs:
+- results/crawl_results_final.json: Crawl output mapping source pages to outlink objects
+
+Outputs:
+- results/training_data_v2.csv: Tabular dataset with contextual features and two labels
+  - label_simple: heuristic label
+  - label_contextual: improved label considering page context (e.g., essential pagination, view toggles)
+
+How it works:
+- Extracts advanced URL, text, DOM-context features (e.g., pagination vs nested pagination, view toggle, sort/filter presence)
+- Produces both simple and contextual labels to compare impact
+
+Usage:
+  uv run python scripts/prepare_training_data_v2.py
+"""
+
 import json
 import pandas as pd
 from pathlib import Path

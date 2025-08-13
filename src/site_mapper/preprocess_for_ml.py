@@ -1,3 +1,24 @@
+"""
+Preprocess the contextual dataset for ML training.
+
+Inputs:
+- results/training_data_v2.csv: Raw contextual dataset
+
+Outputs:
+- results/training_data_processed.csv: Numeric feature matrix with engineered features
+- results/training_data_processed_feature_info.json: Metadata about encoders, removed features, final feature names
+
+Key steps:
+- Handle missing values
+- Extract URL/text features (lengths, presence of query, nav words, etc.)
+- Group source pages (reduce cardinality)
+- Encode categorical features (LabelEncoder / one-hot for low-cardinality)
+- Remove very low-variance boolean features
+
+Usage:
+  uv run python src/site_mapper/preprocess_for_ml.py
+"""
+
 import pandas as pd
 import numpy as np  
 from urllib.parse import urlparse

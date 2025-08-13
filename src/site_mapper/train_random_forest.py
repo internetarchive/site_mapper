@@ -1,3 +1,24 @@
+"""
+Train, tune, evaluate, and save the Random Forest model.
+
+Inputs:
+- results/training_data_processed.csv: Preprocessed dataset
+
+Outputs:
+- results/model/random_forest_model.joblib: Trained model
+- results/model/model_info.json: Feature names, feature importances, model params, evaluation metrics
+
+Flow:
+- Load processed data and select label (prefers 'label_fixed' if present, else 'label_contextual')
+- Train/test split (80/20)
+- Hyperparameter tuning via GridSearchCV (StratifiedKFold)
+- Cross-validation metrics and test evaluation (classification report, confusion matrix, ROC AUC)
+- Save model and metadata for inference
+
+Usage:
+  uv run python src/site_mapper/train_random_forest.py
+"""
+
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -8,7 +29,18 @@ import json
 from pathlib import Path
 
 def load_preprocessed_data(csv_path):
-    """Load the preprocessed training data"""
+    """
+    Load the preprocessed training data from CSV and split into features/target.
+
+    Args:
+        csv_path: Path-like string to results/training_data_processed.csv
+
+    Returns:
+        X: pandas DataFrame of feature columns
+        y: pandas Series of target labels (bool/int)
+        feature_cols: list of feature column names used in training
+    """
+    
     print(f"Loading preprocessed data from {csv_path}")
     df = pd.read_csv(csv_path)
     
@@ -31,7 +63,15 @@ def load_preprocessed_data(csv_path):
     return X, y, feature_cols
 
 def analyze_class_balance(y):
-    """Analyze class distribution and recommend class weighting"""
+    """
+    Analyze class distribution and recommend whether to use class weighting.
+
+    Args:
+        y: pandas Series of target labels
+
+    Returns:
+        use_class_weight: bool indicating if class_weight='balanced' should be used
+    """
     class_counts = np.bincount(y.astype(int))
     class_ratio = class_counts[1] / class_counts[0] if class_counts[0] > 0 else 1
     
@@ -49,10 +89,20 @@ def analyze_class_balance(y):
         return False
 
 def hyperparameter_tuning(X_train, y_train, use_class_weight=False):
-    """Perform hyperparameter tuning with GridSearchCV"""
+    """
+    Perform hyperparameter tuning via GridSearchCV and return the best estimator.
+
+    Args:
+        X_train: pandas DataFrame of training features
+        y_train: pandas Series of training labels
+        use_class_weight: whether to enable class weighting
+
+    Returns:
+        best_estimator_: trained RandomForestClassifier with best found params
+    """
     print("\nPerforming hyperparameter tuning...")
     
-    # Define parameter grid based on your suggestions
+
     param_grid = {
         'n_estimators': [100, 200, 300],  # Number of trees
         'max_depth': [10, 15, 20, None],  # Tree depth
@@ -65,13 +115,12 @@ def hyperparameter_tuning(X_train, y_train, use_class_weight=False):
     rf_base = RandomForestClassifier(
         random_state=42,
         class_weight='balanced' if use_class_weight else None,
-        n_jobs=-1  # Use all CPU cores
+        n_jobs=-1 
     )
     
-    # Use stratified cross-validation
+
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     
-    # Grid search with cross-validation
     grid_search = GridSearchCV(
         rf_base, 
         param_grid, 
@@ -90,7 +139,18 @@ def hyperparameter_tuning(X_train, y_train, use_class_weight=False):
     return grid_search.best_estimator_
 
 def evaluate_model(model, X_test, y_test, feature_names):
-    """Comprehensive model evaluation"""
+    """
+    Evaluate a trained model on the test set and report metrics.
+
+    Args:
+        model: fitted RandomForestClassifier
+        X_test: pandas DataFrame test features
+        y_test: pandas Series test labels
+        feature_names: list of feature column names used for importance
+
+    Returns:
+        dict with keys: 'auc_score', 'feature_importance' (DataFrame), 'classification_report' (dict)
+    """
     print("\n" + "="*50)
     print("MODEL EVALUATION")
     print("="*50)
@@ -99,22 +159,22 @@ def evaluate_model(model, X_test, y_test, feature_names):
     y_pred = model.predict(X_test)
     y_prob = model.predict_proba(X_test)[:, 1]
     
-    # Classification report
+
     print("\nClassification Report:")
     print(classification_report(y_test, y_pred, target_names=['Bad Link', 'Good Link']))
     
-    # Confusion Matrix
+
     print("\nConfusion Matrix:")
     cm = confusion_matrix(y_test, y_pred)
     print(cm)
     print(f"True Negatives: {cm[0,0]}, False Positives: {cm[0,1]}")
     print(f"False Negatives: {cm[1,0]}, True Positives: {cm[1,1]}")
     
-    # ROC AUC
+
     auc_score = roc_auc_score(y_test, y_prob)
     print(f"\nROC AUC Score: {auc_score:.4f}")
     
-    # Feature Importance Analysis
+
     print("\n" + "="*30)
     print("FEATURE IMPORTANCE ANALYSIS")
     print("="*30)
@@ -139,7 +199,14 @@ def evaluate_model(model, X_test, y_test, feature_names):
     }
 
 def cross_validation_analysis(model, X, y):
-    """Perform cross-validation to check for overfitting"""
+    """
+    Run stratified k-fold cross-validation with several scoring metrics.
+
+    Args:
+        model: fitted RandomForestClassifier
+        X: pandas DataFrame features
+        y: pandas Series labels
+    """
     print("\n" + "="*30)
     print("CROSS-VALIDATION ANALYSIS")
     print("="*30)
@@ -154,7 +221,15 @@ def cross_validation_analysis(model, X, y):
         print(f"{metric:10s}: {scores.mean():.4f} (+/- {scores.std() * 2:.4f})")
 
 def save_model_and_results(model, results, feature_names, output_dir):
-    """Save the trained model and evaluation results"""
+    """
+    Persist the trained model and evaluation artifacts to disk.
+
+    Args:
+        model: fitted RandomForestClassifier
+        results: dict returned by evaluate_model
+        feature_names: list of feature column names
+        output_dir: directory path where artifacts will be written
+    """
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
     
@@ -177,7 +252,15 @@ def save_model_and_results(model, results, feature_names, output_dir):
     print(f"Model info saved to: {info_path}")
 
 def main():
-    """Main training pipeline"""
+    """
+    Main training pipeline:
+      1) Load processed data
+      2) Analyze class balance
+      3) Train/test split
+      4) Hyperparameter tuning
+      5) Cross-validation
+      6) Final evaluation and save artifacts
+    """
     print("="*60)
     print("RANDOM FOREST TRAINING FOR CRAWLER LINK FILTERING")
     print("="*60)
